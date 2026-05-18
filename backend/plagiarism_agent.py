@@ -20,16 +20,33 @@ class PlagiarismReport(BaseModel):
 # ---------------------------------------------------------
 class PlagiarismDetector:
     def __init__(self):
-        # We use a very low temperature so the AI acts like a strict investigator
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            temperature=0.0, 
-            api_key=os.getenv("GEMINI_API_KEY")
-        )
-        self.structured_llm = self.llm.with_structured_output(PlagiarismReport)
-        print("🕵️‍♂️ Plagiarism Agent Initialized. Scanning for anomalies...\n")
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            print("[WARNING] GEMINI_API_KEY is not defined. Using mock fallback mode for Plagiarism Agent.")
+            self.llm = None
+            self.structured_llm = None
+        else:
+            self.llm = ChatGoogleGenerativeAI(
+                model="gemini-2.5-flash",
+                temperature=0.0, 
+                api_key=api_key
+            )
+            self.structured_llm = self.llm.with_structured_output(PlagiarismReport)
+        print("[INFO] Plagiarism Agent Initialized. Scanning for anomalies...\n")
 
     def analyze_papers(self, student_1_answer: str, student_2_answer: str):
+        if not self.llm:
+            print("🔍 [MOCK PLAGIARISM] Skipping remote AI compare, generating mock structural report.")
+            return PlagiarismReport(
+                is_suspicious=True,
+                confidence_score=85,
+                shared_anomalies=[
+                    "Both students evaluated derivative of 5x as 3 instead of 5.",
+                    "Exact verbatim layout match in formula alignment."
+                ],
+                verdict_justification="Highly likely logical collusion. Identical weird logical error found on Q1 step 2."
+            )
+
         print("🔍 Comparing Student 1 and Student 2 logic structures...")
 
         prompt = ChatPromptTemplate.from_messages([

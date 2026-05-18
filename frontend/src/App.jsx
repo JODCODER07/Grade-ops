@@ -49,6 +49,12 @@ function App() {
   // --- 1. RBAC & NAVIGATION STATE ---
   const [role, setRole] = useState(null) // 'instructor' or 'ta'
   const [activeTab, setActiveTab] = useState('grading')
+  const [theme, setTheme] = useState(() => localStorage.getItem('gradeops-theme') || 'oxford')
+
+  useEffect(() => {
+    document.body.className = `theme-${theme}`
+    localStorage.setItem('gradeops-theme', theme)
+  }, [theme])
 
   // --- 2. GRADING STATE ---
   const [files, setFiles] = useState([])         
@@ -367,14 +373,44 @@ function App() {
           </h1>
           <p className="logout-subtext">Secure Session Active // <a href="#" onClick={() => { setRole(null); setGradeReport(null); setFiles([]); setPreviewUrl(null); }}>Disconnect Terminal</a></p>
         </div>
-        <div className="tabs">
-          <button className={activeTab === 'grading' ? 'active-tab' : ''} onClick={() => setActiveTab('grading')}>📝 Grade Exam</button>
-          {role === 'instructor' && (
-             <>
-               <button className={activeTab === 'plagiarism' ? 'active-tab' : ''} onClick={() => setActiveTab('plagiarism')}>🕵️‍♂️ Plagiarism Check</button>
-               <button className={activeTab === 'roster' ? 'active-tab' : ''} onClick={() => { setActiveTab('roster'); fetchRoster(); }}>🗄️ Class Roster</button>
-             </>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div className="theme-selector-box" style={{ display: 'flex', alignItems: 'center' }}>
+            <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', marginRight: '8px', letterSpacing: '0.5px' }}>
+              Palette:
+            </span>
+            <select 
+              value={theme} 
+              onChange={(e) => {
+                setTheme(e.target.value)
+                showToast(`Switched palette to ${e.target.value.toUpperCase()}!`, "success")
+              }}
+              className="hifi-select" 
+              style={{ 
+                padding: '4px 24px 4px 10px', 
+                fontSize: '11px', 
+                fontWeight: '600',
+                width: '120px', 
+                backgroundSize: '10px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
+                backgroundPosition: 'right 8px center'
+              }}
+            >
+              <option value="oxford">Oxford Indigo</option>
+              <option value="crimson">Harvard Red</option>
+              <option value="teal">MIT Teal</option>
+              <option value="stanford">Stanford Gold</option>
+            </select>
+          </div>
+          <div className="tabs">
+            <button className={activeTab === 'grading' ? 'active-tab' : ''} onClick={() => setActiveTab('grading')}>📝 Grade Exam</button>
+            {role === 'instructor' && (
+               <>
+                 <button className={activeTab === 'plagiarism' ? 'active-tab' : ''} onClick={() => setActiveTab('plagiarism')}>🕵️‍♂️ Plagiarism Check</button>
+                 <button className={activeTab === 'roster' ? 'active-tab' : ''} onClick={() => { setActiveTab('roster'); fetchRoster(); }}>🗄️ Class Roster</button>
+               </>
+            )}
+          </div>
         </div>
       </header>
 

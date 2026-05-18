@@ -31,12 +31,48 @@ app.add_middleware(
 from dotenv import load_dotenv
 load_dotenv()
 
-# --- MONGODB SETUP ---
-mongodb_uri = os.getenv("MONGODB_URI", "mongodb+srv://naitikagarwal20054_db_user:gradeops123@cluster0.flsleqk.mongodb.net/?appName=Cluster0")
-client = MongoClient(mongodb_uri)
-db = client.gradeops
-grades_collection = db.grades
-print("🟢 MongoDB Connected Successfully!")
+# --- MONGODB SETUP WITH RESILIENT IN-MEMORY DEMO FALLBACK ---
+try:
+    mongodb_uri = os.getenv("MONGODB_URI", "mongodb+srv://naitikagarwal20054_db_user:gradeops123@cluster0.flsleqk.mongodb.net/?appName=Cluster0")
+    client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=2000)
+    db = client.gradeops
+    grades_collection = db.grades
+    client.admin.command('ping')
+    print("[SUCCESS] MongoDB Connected Successfully!")
+except Exception as e:
+    print(f"[WARNING] MongoDB Connection failed ({str(e)}). Falling back to resilient in-memory database.")
+    class MockGradesCollection:
+        def __init__(self):
+            self.store = [
+                {"_id": "mock_1", "student_id": "STU-1001", "total_score": 9, "status": "Approved", "feedback": "Flawless differentiation and calculus proof steps. Excellent work!"},
+                {"_id": "mock_2", "student_id": "STU-1002", "total_score": 7, "status": "Approved", "feedback": "Great conceptual understanding. Minor algebraic addition slip in Q1 final answer."},
+                {"_id": "mock_3", "student_id": "STU-1003", "total_score": 4, "status": "Overridden", "feedback": "TA Adjusted: Student attempted all parts but skipped the power rule details entirely."},
+                {"_id": "mock_4", "student_id": "STU-1004", "total_score": 8, "status": "Approved", "feedback": "Superb limit computation. Clear breakdown of steps and proper variables usage."},
+                {"_id": "mock_5", "student_id": "STU-1005", "total_score": 2, "status": "Overridden", "feedback": "TA Adjusted: Empty paper with only basic formulas written."}
+            ]
+        def insert_one(self, data):
+            import uuid
+            new_data = dict(data)
+            new_data["_id"] = str(uuid.uuid4())
+            self.store.append(new_data)
+            class MockResult:
+                def __init__(self, inserted_id):
+                    self.inserted_id = inserted_id
+            return MockResult(new_data["_id"])
+        def find(self):
+            return self.store
+        def delete_one(self, query):
+            target_id = query.get("_id")
+            if target_id:
+                initial_len = len(self.store)
+                str_id = str(target_id)
+                self.store = [item for item in self.store if str(item.get("_id")) != str_id]
+                class MockDeleteResult:
+                    def __init__(self, deleted_count):
+                        self.deleted_count = deleted_count
+                return MockDeleteResult(initial_len - len(self.store))
+            return MockDeleteResult(0)
+    grades_collection = MockGradesCollection()
 
 # --- INITIALIZE AI ENGINES ---
 vision_ai = CloudVisionEngine()

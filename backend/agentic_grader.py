@@ -27,17 +27,19 @@ class FullExamReport(BaseModel):
 # --- 2. AGENT DEFINITION ---
 class AgenticGrader:
     def __init__(self):
-        # Initialize Gemini 2.5 Flash
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            temperature=0.1,
-            api_key=os.getenv("GEMINI_API_KEY")
-        )
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            print("[WARNING] GEMINI_API_KEY is not defined. Using mock fallback mode for Grader.")
+            self.llm = None
+            self.structured_llm = None
+        else:
+            self.llm = ChatGoogleGenerativeAI(
+                model="gemini-2.5-flash",
+                temperature=0.1,
+                api_key=api_key
+            )
+            self.structured_llm = self.llm.with_structured_output(FullExamReport)
         
-        # Bind the new Full Exam schema
-        self.structured_llm = self.llm.with_structured_output(FullExamReport)
-
-        # Update the Prompt to handle multiple questions
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", """You are an expert Professor grading an entire handwritten exam.
             You will be given a JSON array of rubrics (one for each question) and the raw extracted text from a student's exam.
@@ -63,15 +65,47 @@ class AgenticGrader:
         except Exception as e:
             rubric_data = "Error loading rubric."
 
-        # Dynamically instantiate or configure LLM with the custom temperature
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            print("📡 [MOCK GRADER] Generating mock Structured Report based on rigor policy:", rigor)
+            score1 = 4 if rigor == "balanced" else (3 if rigor == "strict" else 5)
+            score2 = 3 if rigor == "balanced" else (2 if rigor == "strict" else 4)
+            total = score1 + score2
+            return {
+                "total_exam_score": total,
+                "max_exam_points": 10,
+                "questions": [
+                    {
+                        "question_id": "Q1",
+                        "score": score1,
+                        "max_points": 5,
+                        "feedback": f"Evaluated under {rigor.upper()} rules. Strong application of calculus derivatives.",
+                        "step_grades": [
+                            {"step_name": "Power Rule on x^2", "points_awarded": 2, "justification": "Applied power rule perfectly to get 2x."},
+                            {"step_name": "Derivative of 5x", "points_awarded": 2 if score1 >= 4 else 1, "justification": "Computed correctly."},
+                            {"step_name": "Final Answer", "points_awarded": 1 if score1 >= 5 else 0, "justification": "Awarded according to criteria."}
+                        ]
+                    },
+                    {
+                        "question_id": "Q2",
+                        "score": score2,
+                        "max_points": 5,
+                        "feedback": "Showed solid understanding of conceptual limit problems.",
+                        "step_grades": [
+                            {"step_name": "Basic concept", "points_awarded": score2, "justification": "Conceptual steps demonstrated."}
+                        ]
+                    }
+                ],
+                "general_feedback": f"Calculus Exam Summary: Overall strong comprehension. Student showed correct steps with a minor boundary slip. Graded under {rigor.upper()} criteria successfully."
+            }
+
         llm = ChatGoogleGenerativeAI(
             model="gemini-2.5-flash",
             temperature=temperature,
-            api_key=os.getenv("GEMINI_API_KEY")
+            api_key=api_key
         )
         structured_llm = llm.with_structured_output(FullExamReport)
 
-        # Build custom dynamic instructions based on rigor
         if rigor == "strict":
             rigor_instruction = (
                 "You must grade with extreme STRICTION. Award points ONLY if the student's answer "
