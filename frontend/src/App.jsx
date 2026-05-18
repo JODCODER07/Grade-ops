@@ -2,32 +2,8 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import './App.css'
 
-function App() {
-  // --- 1. RBAC & NAVIGATION STATE ---
-  const [role, setRole] = useState(null) // 'instructor' or 'ta'
-  const [activeTab, setActiveTab] = useState('grading')
-
-  // --- 2. GRADING STATE ---
-  const [files, setFiles] = useState([])         
-  const [currentFileIndex, setCurrentFileIndex] = useState(0) 
-  const [studentName, setStudentName] = useState("")
-  const [file, setFile] = useState(null)
-  const [previewUrl, setPreviewUrl] = useState(null)
-  const [loadingStep, setLoadingStep] = useState(null)
-  const [extractedText, setExtractedText] = useState("")
-  const [gradeReport, setGradeReport] = useState(null)
-  const [error, setError] = useState(null)
-
-  // --- NEW: DYNAMIC PARAMETERS ---
-  const [rigor, setRigor] = useState('balanced') // 'strict' | 'balanced' | 'lenient'
-  const [temperature, setTemperature] = useState(0.1)
-
-  // --- NEW: UI ENHANCEMENTS ---
-  const [openQuestions, setOpenQuestions] = useState({}) // Manage expanded/collapsed cards
-  const [toasts, setToasts] = useState([]) // Manage dynamic toast notification list
-
-  // --- MULTI-QUESTION RUBRIC ARRAY ---
-  const [rubricText, setRubricText] = useState(`[
+const RUBRIC_TEMPLATES = {
+  calculus: `[
   {
     "question_id": "Q1",
     "total_points": 5,
@@ -44,7 +20,61 @@ function App() {
       { "step": "Basic concept", "points": 5, "condition": "Award 5 pts if they show understanding of the second question." }
     ]
   }
-]`)
+]`,
+  programming: `[
+  {
+    "question_id": "Q1",
+    "total_points": 5,
+    "grading_criteria": [
+      { "step": "Loop initialization", "points": 2, "condition": "Award 2 points if they correctly initialize a for/while loop structure." },
+      { "step": "Loop condition logic", "points": 2, "condition": "Award 2 points if the loop condition boundary handles limit correctly." },
+      { "step": "Correct variable accumulation", "points": 1, "condition": "Award 1 point if variables accumulate sum/index perfectly." }
+    ]
+  }
+]`,
+  essay: `[
+  {
+    "question_id": "Q1",
+    "total_points": 10,
+    "grading_criteria": [
+      { "step": "Thesis clarity", "points": 3, "condition": "Award 3 points if they write a clear, arguable, and precise thesis statement." },
+      { "step": "Evidentiary support", "points": 4, "condition": "Award 4 points if they cite strong evidence and historical contexts correctly." },
+      { "step": "Grammar and organization", "points": 3, "condition": "Award 3 points for clear syntax structure, vocabulary, and flawless spelling." }
+    ]
+  }
+]`
+};
+
+function App() {
+  // --- 1. RBAC & NAVIGATION STATE ---
+  const [role, setRole] = useState(null) // 'instructor' or 'ta'
+  const [activeTab, setActiveTab] = useState('grading')
+
+  // --- 2. GRADING STATE ---
+  const [files, setFiles] = useState([])         
+  const [currentFileIndex, setCurrentFileIndex] = useState(0) 
+  const [studentName, setStudentName] = useState("")
+  const [file, setFile] = useState(null)
+  const [previewUrl, setPreviewUrl] = useState(null)
+  const [loadingStep, setLoadingStep] = useState(null)
+  const [extractedText, setExtractedText] = useState("")
+  const [gradeReport, setGradeReport] = useState(null)
+  const [error, setError] = useState(null)
+
+  // --- AI PARAMETERS ---
+  const [rigor, setRigor] = useState('balanced') // 'strict' | 'balanced' | 'lenient'
+  const [temperature, setTemperature] = useState(0.1)
+
+  // --- UI ENHANCEMENTS ---
+  const [openQuestions, setOpenQuestions] = useState({}) // Accordion collapsible questions
+  const [toasts, setToasts] = useState([]) // Notifications stack
+
+  // --- NEW FEATURES STATES ---
+  const [searchQuery, setSearchQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState("all")
+
+  // --- RUBRIC CONFIG STATE ---
+  const [rubricText, setRubricText] = useState(RUBRIC_TEMPLATES.calculus)
 
   // --- 3. OVERRIDE STATE ---
   const [isOverriding, setIsOverriding] = useState(false)
@@ -237,6 +267,20 @@ function App() {
     return { avg, max, passRate }
   }
 
+  // Pure CSS dynamic Histogram brackets calculation
+  const getScoreBrackets = () => {
+    const brackets = { "0-2": 0, "3-4": 0, "5-6": 0, "7-8": 0, "9-10": 0 }
+    rosterData.forEach(g => {
+      const score = g.total_score
+      if (score <= 2) brackets["0-2"]++
+      else if (score <= 4) brackets["3-4"]++
+      else if (score <= 6) brackets["5-6"]++
+      else if (score <= 8) brackets["7-8"]++
+      else brackets["9-10"]++
+    })
+    return brackets
+  }
+
   const exportToCSV = () => {
     if (rosterData.length === 0) return showToast("No ledger records available to export.", "warning")
     
@@ -275,6 +319,16 @@ function App() {
   }
 
   const stats = getRosterStats()
+  const brackets = getScoreBrackets()
+  const maxBracketCount = Math.max(...Object.values(brackets), 1)
+
+  // Real-time table filters logic
+  const filteredRoster = rosterData.filter(grade => {
+    const matchesSearch = grade.student_id.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          (grade.feedback || "").toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesStatus = statusFilter === "all" ? true : grade.status.toLowerCase() === statusFilter.toLowerCase()
+    return matchesSearch && matchesStatus
+  })
 
   // ==========================================
   //                  RENDER
@@ -286,16 +340,16 @@ function App() {
         <div className="login-card">
           <div className="vl-icon-brand">GO</div>
           <h1>VIRTUAL GRADING MATRIX</h1>
-          <p className="login-subtitle">Authenticate node criteria and establish connection:</p>
+          <p className="login-subtitle">Authenticate secure grading ledger operational criteria:</p>
           <div className="login-btn-group">
-            <button className="hifi-btn mode-instructor" onClick={() => { setRole('instructor'); showToast("Connected as ROOT Instructor.", "success"); }}>
+            <button className="hifi-btn mode-instructor" onClick={() => { setRole('instructor'); showToast("Connected to Root Console.", "success"); }}>
               INSTRUCTOR AUTHORIZATION
             </button>
             <button className="hifi-btn mode-ta" onClick={() => { setRole('ta'); showToast("Connected as TA Evaluator.", "warning"); }}>
               TA DASHBOARD ACCESS
             </button>
           </div>
-          <div className="login-footer">GRADEOPS v3.0 // Autonomous Grading Matrix</div>
+          <div className="login-footer">GRADEOPS v4.0 // Slate & Cyber-Lavender Hybrid</div>
         </div>
       </div>
     )
@@ -331,6 +385,27 @@ function App() {
             {role === 'instructor' ? (
               <>
                 <h2>1. Dynamic Rubric Config (JSON Architecture)</h2>
+                
+                {/* Preset Rubric Template Selector (NEW FEAT) */}
+                <div className="input-field-group" style={{ marginBottom: '16px' }}>
+                  <label>Select Rubric Template Preset:</label>
+                  <select 
+                    className="hifi-select"
+                    onChange={(e) => {
+                      const selected = e.target.value
+                      if (RUBRIC_TEMPLATES[selected]) {
+                        setRubricText(RUBRIC_TEMPLATES[selected])
+                        showToast(`Loaded ${selected.toUpperCase()} rubric template structure!`, "success")
+                      }
+                    }}
+                    defaultValue="calculus"
+                  >
+                    <option value="calculus">📐 Calculus Derivative Quiz</option>
+                    <option value="programming">💻 Python Loop Structure Lab</option>
+                    <option value="essay">📝 Essay Synthesis & Thesis critique</option>
+                  </select>
+                </div>
+                
                 <textarea value={rubricText} onChange={(e) => setRubricText(e.target.value)} rows={9} className="hifi-textarea code-font"/>
               </>
             ) : (
@@ -347,28 +422,28 @@ function App() {
                 <div className="param-header">
                   <span>Grading Rigor</span>
                   <span className="param-val" style={{ 
-                    color: rigor === 'strict' ? 'var(--neon-rose)' : rigor === 'lenient' ? 'var(--neon-emerald)' : 'var(--neon-cyan)' 
+                    color: rigor === 'strict' ? 'var(--coral-accent)' : rigor === 'lenient' ? 'var(--sage-accent)' : 'var(--lavender-light)' 
                   }}>{rigor.toUpperCase()}</span>
                 </div>
                 <div className="rigor-button-group">
                   <button 
                     type="button" 
                     className={`rigor-btn ${rigor === 'strict' ? 'active-strict' : ''}`}
-                    onClick={() => { setRigor('strict'); showToast("Rigor changed to STRICT: Evaluates strict criteria match.", "error"); }}
+                    onClick={() => { setRigor('strict'); showToast("Rigor changed to STRICT: Strict logical grading.", "error"); }}
                   >
                     STRICT
                   </button>
                   <button 
                     type="button" 
                     className={`rigor-btn ${rigor === 'balanced' ? 'active-balanced' : ''}`}
-                    onClick={() => { setRigor('balanced'); showToast("Rigor changed to BALANCED: Standard grading logic.", "success"); }}
+                    onClick={() => { setRigor('balanced'); showToast("Rigor changed to BALANCED: Standard rubrics.", "success"); }}
                   >
                     BALANCED
                   </button>
                   <button 
                     type="button" 
                     className={`rigor-btn ${rigor === 'lenient' ? 'active-lenient' : ''}`}
-                    onClick={() => { setRigor('lenient'); showToast("Rigor changed to LENIENT: Generous conceptual grading.", "success"); }}
+                    onClick={() => { setRigor('lenient'); showToast("Rigor changed to LENIENT: Generous points.", "success"); }}
                   >
                     LENIENT
                   </button>
@@ -519,7 +594,7 @@ function App() {
                     </div>
                     
                     <div className="action-row-footer">
-                      <button onClick={saveOverride} className="btn-approve-action" style={{background: 'var(--neon-cyan)', color: '#0f172a', boxShadow: '0 4px 15px rgba(6, 182, 212, 0.2)'}}>💾 Save Override & Submit</button>
+                      <button onClick={saveOverride} className="btn-approve-action" style={{background: 'var(--lavender-accent)', color: 'var(--text-pure)', boxShadow: '0 4px 10px rgba(139,92,246,0.2)'}}>💾 Save Override & Submit</button>
                       <button onClick={() => setIsOverriding(false)} className="btn-cancel">Cancel</button>
                     </div>
                   </div>
@@ -559,12 +634,46 @@ function App() {
 
           <section className="panel">
             <h2>Integrity Vector Breakdown</h2>
+            
+            {/* Plagiarism Similarity Heatmap circular indicator (NEW FEAT) */}
+            {plagReport && (
+              <div className="plag-heatmap-row">
+                <div 
+                  className="plag-gauge-circle"
+                  style={{
+                    background: `conic-gradient(${plagReport.is_suspicious ? 'var(--coral-accent)' : 'var(--sage-accent)'} ${plagReport.confidence_score}%, rgba(255,255,255,0.05) ${plagReport.confidence_score}%)`,
+                    color: plagReport.is_suspicious ? 'var(--coral-accent)' : 'var(--sage-accent)'
+                  }}
+                >
+                  <div style={{
+                    position: 'absolute',
+                    width: '58px',
+                    height: '58px',
+                    borderRadius: '50%',
+                    background: 'var(--bg-slate-card-solid)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    {plagReport.confidence_score}%
+                  </div>
+                </div>
+                <div>
+                  <h4 style={{ margin: '0 0 4px 0', color: plagReport.is_suspicious ? 'var(--coral-accent)' : 'var(--sage-accent)', fontFamily: 'Inter', fontSize: '14px', fontWeight: '700' }}>
+                    {plagReport.is_suspicious ? "🚨 High Plagiarism Collusion Risk" : "✅ No Shared Logical Copied Vectors"}
+                  </h4>
+                  <p style={{ margin: 0, fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                    Visual logical collusion indices calculated reasoning crossover matches.
+                  </p>
+                </div>
+              </div>
+            )}
+            
             {plagReport ? (
-              <div className="report-card-plag" style={{ borderColor: plagReport.is_suspicious ? 'var(--neon-rose)' : 'var(--neon-emerald)'}}>
-                <h3 style={{color: plagReport.is_suspicious ? 'var(--neon-rose)' : 'var(--neon-emerald)', marginTop: 0, fontFamily: 'Orbitron'}}>
-                  {plagReport.is_suspicious ? "🚨 COLLUSION THREAT DETECTED" : "✅ LOGICAL VARIANCE VALIDATION CLEAR"}
+              <div className="report-card-plag" style={{ borderColor: plagReport.is_suspicious ? 'var(--coral-accent)' : 'var(--sage-accent)'}}>
+                <h3 style={{color: plagReport.is_suspicious ? 'var(--coral-accent)' : 'var(--sage-accent)', marginTop: 0, fontFamily: 'Inter', fontSize: '14px'}}>
+                  {plagReport.is_suspicious ? "COLLUSION THREAT CONFIRMED" : "LOGICAL VARIANCE VALIDATION CLEAR"}
                 </h3>
-                <p className="metric-display">Structural Logic Identity Metric: <span className="bold-glow">{plagReport.confidence_score}% Match Index</span></p>
                 
                 <h4>Identified Reasoning Cross-Over Matches:</h4>
                 <ul className="step-list">
@@ -585,7 +694,7 @@ function App() {
           <section className="panel row-span-all">
             <h2>🗄️ Master Class Roster (Live Database Ledger)</h2>
             
-            {/* dynamic Ledger summaries */}
+            {/* Dynamic Ledger summaries */}
             <div className="ledger-summary-row">
               <div className="summary-widget-card wid-avg">
                 <p>Class Average</p>
@@ -601,10 +710,55 @@ function App() {
               </div>
             </div>
 
-            {/* Export Deck */}
-            <div className="roster-action-deck">
-              <button className="btn-export-ledger" onClick={exportToCSV}>📤 Export CSV</button>
-              <button className="btn-export-ledger" onClick={exportToJSON}>📤 Export JSON</button>
+            {/* Dynamic CSS Grade Distribution Histogram Chart (NEW FEAT) */}
+            <div className="histogram-section">
+              <div className="histogram-title">📊 Grade Distribution Histogram</div>
+              <div className="histogram-chart-wrapper">
+                {Object.entries(brackets).map(([range, count]) => {
+                  const percentHeight = ((count / maxBracketCount) * 100).toFixed(0)
+                  return (
+                    <div key={range} className="histogram-bar-col">
+                      <div 
+                        className="histogram-bar" 
+                        style={{ height: `${Math.max(parseInt(percentHeight), 3)}%` }}
+                      ></div>
+                      <div className="histogram-tooltip">{count} Student{count !== 1 ? 's' : ''} ({range} score)</div>
+                      <div className="histogram-label">{range}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Search, filters, and Export controls panel (NEW FEAT) */}
+            <div className="roster-control-panel">
+              <div className="roster-search-box">
+                <span className="roster-search-icon">🔍</span>
+                <input 
+                  type="text" 
+                  placeholder="Search student reference or feedback..." 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="roster-search-input"
+                />
+              </div>
+              
+              <div className="roster-filter-box">
+                <select 
+                  className="roster-filter-select"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                >
+                  <option value="all">All statuses</option>
+                  <option value="approved">Approved</option>
+                  <option value="overridden">Overridden</option>
+                </select>
+              </div>
+
+              <div className="roster-action-deck">
+                <button className="btn-export-ledger" onClick={exportToCSV}>📤 Export CSV</button>
+                <button className="btn-export-ledger" onClick={exportToJSON}>📤 Export JSON</button>
+              </div>
             </div>
 
             {loadingRoster ? <div className="placeholder-text-stream">Querying live data arrays...</div> : (
@@ -620,8 +774,8 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rosterData.length === 0 && <tr><td colSpan="5" className="empty-table-prompt">// No grades saved yet.</td></tr>}
-                    {rosterData.map((grade) => (
+                    {filteredRoster.length === 0 && <tr><td colSpan="5" className="empty-table-prompt">// No matching records located.</td></tr>}
+                    {filteredRoster.map((grade) => (
                       <tr key={grade._id}>
                         <td className="st-id-cell">{grade.student_id}</td>
                         <td>
@@ -635,7 +789,7 @@ function App() {
                         <td className="table-feedback-text-cell">{grade.feedback}</td>
                         <td>
                           <button onClick={() => deleteGrade(grade._id)} className="purge-btn-table">
-                            🗑️ Delete
+                            Purge
                           </button>
                         </td>
                       </tr>
