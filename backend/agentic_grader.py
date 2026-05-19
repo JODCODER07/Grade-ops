@@ -152,4 +152,4 @@ class AgenticGrader:
             "student_answer": student_answer
         })
         
-        return result.dict()
+        return result.model_dump()

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
 import './App.css'
 
@@ -110,13 +110,21 @@ function App() {
     }, 4500)
   }
 
-  // Keyboard Shortcuts Hook
+  // Keyboard Shortcuts Hook — use refs to avoid stale closures
+  const gradeReportRef = useRef(gradeReport)
+  const isOverridingRef = useRef(isOverriding)
+  const studentNameRef = useRef(studentName)
+  
+  useEffect(() => { gradeReportRef.current = gradeReport }, [gradeReport])
+  useEffect(() => { isOverridingRef.current = isOverriding }, [isOverriding])
+  useEffect(() => { studentNameRef.current = studentName }, [studentName])
+
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (!gradeReport || isOverriding) return; 
+      if (!gradeReportRef.current || isOverridingRef.current) return; 
       
       if (e.key === 'Enter') {
-        saveGradeToDB("Approved", gradeReport.total_exam_score, gradeReport.general_feedback)
+        saveGradeToDB("Approved", gradeReportRef.current.total_exam_score, gradeReportRef.current.general_feedback)
       }
       if (e.key === ' ') { 
         e.preventDefault()
@@ -125,7 +133,7 @@ function App() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [gradeReport, isOverriding])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ==========================================
   //               API HANDLERS
@@ -657,11 +665,11 @@ function App() {
             <h2>Compare Integrity Matrices</h2>
             <div className="plag-upload-row">
               <strong>Payload Stream 1: </strong>
-              <input type="file" className="dark-file-input" onChange={(e) => setFile1(e.target.files[0])} />
+              <input type="file" className="dark-file-input" accept="image/*,application/pdf" onChange={(e) => setFile1(e.target.files[0])} />
             </div>
             <div className="plag-upload-row">
               <strong>Payload Stream 2: </strong>
-              <input type="file" className="dark-file-input" onChange={(e) => setFile2(e.target.files[0])} />
+              <input type="file" className="dark-file-input" accept="image/*,application/pdf" onChange={(e) => setFile2(e.target.files[0])} />
             </div>
             <button className="run-btn" onClick={runPlagiarismCheck} disabled={plagLoading}>
               {plagLoading ? "🕵️‍♂️ SCANNING COLLUSION ANOMALIES IN MEMORY DATA ARRAYS..." : "🔍 RUN ANOMALY COLLUSION DETECTOR"}

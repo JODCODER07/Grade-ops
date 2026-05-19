@@ -26,8 +26,7 @@ class CloudVisionEngine:
         try:
             img = Image.open(image_path)
         except FileNotFoundError:
-            print(f"❌ Error: Could not find '{image_path}'. Make sure it is in the main folder!")
-            sys.exit(1)
+            raise ValueError(f"Could not find '{image_path}'. Make sure the file was uploaded correctly.")
 
         prompt = "Extract and transcribe all the handwritten text and math formulas from this image exactly as written. Output only the transcribed text. Do not add any conversational filler."
 

@@ -45,7 +45,7 @@ class PlagiarismDetector:
                     "Exact verbatim layout match in formula alignment."
                 ],
                 verdict_justification="Highly likely logical collusion. Identical weird logical error found on Q1 step 2."
-            )
+            ).model_dump()
 
         print("🔍 Comparing Student 1 and Student 2 logic structures...")
 
@@ -62,10 +62,11 @@ class PlagiarismDetector:
 
         detection_chain = prompt | self.structured_llm
 
-        return detection_chain.invoke({
+        result = detection_chain.invoke({
             "student_1": student_1_answer,
             "student_2": student_2_answer
         })
+        return result.model_dump() if hasattr(result, 'model_dump') else result
 
 # ---------------------------------------------------------
 # 3. TEST THE DETECTOR

@@ -4,8 +4,6 @@ dns.resolver.default_resolver = dns.resolver.Resolver(configure=False)
 dns.resolver.default_resolver.nameservers = ['8.8.8.8'] # Forces Python to use Google's DNS!
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
-# ... (rest of your imports stay the same)
-from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pymongo import MongoClient
@@ -146,8 +144,7 @@ async def check_plagiarism(request: PlagiarismRequest):
 async def save_grade(request: SaveGradeRequest):
     """Saves the final grade to MongoDB as a JSON document."""
     try:
-        # Changed from model_dump() to dict() to ensure cross-version stability!
-        grade_doc = request.dict() 
+        grade_doc = request.model_dump()
         grades_collection.insert_one(grade_doc)
         return {"message": "Grade permanently saved to MongoDB!"}
     except Exception as e:
@@ -169,12 +166,17 @@ async def get_all_grades():
 async def delete_grade(grade_id: str):
     """Deletes a specific grade from the MongoDB Class Roster."""
     try:
-        # MongoDB requires the ID string to be converted to an ObjectId object
-        result = grades_collection.delete_one({"_id": ObjectId(grade_id)})
+        # Check if using the in-memory Mock collection fallback
+        if type(grades_collection).__name__ == "MockGradesCollection":
+            result = grades_collection.delete_one({"_id": grade_id})
+        else:
+            result = grades_collection.delete_one({"_id": ObjectId(grade_id)})
         
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Grade not found.")
             
         return {"message": "Grade deleted successfully!"}
+    except HTTPException:
+        raise  # Re-raise 404 / other HTTP exceptions without wrapping them in 500
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
